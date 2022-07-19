@@ -41,6 +41,7 @@ def normal_kl(mean1, logvar1, mean2, logvar2):
 
 def approx_standard_normal_cdf(x):
     """
+    高斯分布的累积分布函数的近似计算
     A fast approximation of the cumulative distribution function of the
     standard normal.
     """
@@ -59,8 +60,12 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
     :return: a tensor like x of log probabilities (in nats).
     """
     assert x.shape == means.shape == log_scales.shape
+    
+    # 减去均值
     centered_x = x - means
     inv_stdv = th.exp(-log_scales)
+
+    # 将[-1, 1]分成255个bins，最右边的CDF计为1，最左边的CDF计为0
     plus_in = inv_stdv * (centered_x + 1.0 / 255.0)
     cdf_plus = approx_standard_normal_cdf(plus_in)
     min_in = inv_stdv * (centered_x - 1.0 / 255.0)

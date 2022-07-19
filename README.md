@@ -31,7 +31,8 @@ To train your model, you should first decide some hyperparameters. We will split
 ```
 MODEL_FLAGS="--image_size 64 --num_channels 128 --num_res_blocks 3"
 DIFFUSION_FLAGS="--diffusion_steps 4000 --noise_schedule linear"
-TRAIN_FLAGS="--lr 1e-4 --batch_size 128"
+TRAIN_FLAGS="--lr 1e-4 --batch_size 32"
+NUM_GPUS=2
 ```
 
 Here are some changes we experiment with, and how to set them in the flags:

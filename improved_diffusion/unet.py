@@ -38,7 +38,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
     support it as an extra input.
     """
 
-    def forward(self, x, emb):
+    def forward(self, x, emb): # x: xt, emb:
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 x = layer(x, emb)
@@ -334,6 +334,7 @@ class UNetModel(nn.Module):
         self.num_heads_upsample = num_heads_upsample
 
         time_embed_dim = model_channels * 4
+
         self.time_embed = nn.Sequential(
             linear(model_channels, time_embed_dim),
             SiLU(),
@@ -341,7 +342,7 @@ class UNetModel(nn.Module):
         )
 
         if self.num_classes is not None:
-            self.label_emb = nn.Embedding(num_classes, time_embed_dim)
+            self.label_emb = nn.Embedding(num_classes, time_embed_dim) # 条件生成
 
         self.input_blocks = nn.ModuleList(
             [
@@ -466,7 +467,9 @@ class UNetModel(nn.Module):
         :param x: an [N x C x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
         :param y: an [N] Tensor of labels, if class-conditional.
-        :return: an [N x C x ...] Tensor of outputs.
+        :return: an [N x C x ...] Tensor of outputs. 
+        # 理解这个输出
+        # 方差, 噪声, 均值, x0都是可以的
         """
         assert (y is not None) == (
             self.num_classes is not None

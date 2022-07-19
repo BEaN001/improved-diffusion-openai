@@ -58,7 +58,7 @@ def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
     for i in range(num_diffusion_timesteps):
         t1 = i / num_diffusion_timesteps
         t2 = (i + 1) / num_diffusion_timesteps
-        betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta))
+        betas.append(min(1 - alpha_bar(t2) / alpha_bar(t1), max_beta)) # 公式看论文
     return np.array(betas)
 
 
@@ -124,12 +124,13 @@ class GaussianDiffusion:
         loss_type,
         rescale_timesteps=False,
     ):
-        self.model_mean_type = model_mean_type
-        self.model_var_type = model_var_type
-        self.loss_type = loss_type
-        self.rescale_timesteps = rescale_timesteps
+        self.model_mean_type = model_mean_type # 噪声，x[0], 还是x[t-1]
+        self.model_var_type = model_var_type # 固定，预测，还是混合
+        self.loss_type = loss_type # mse, kl, 还是都有
+        self.rescale_timesteps = rescale_timesteps # 是不是要缩放到 0-1000
 
         # Use float64 for accuracy.
+        # 原始的betas
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
         assert len(betas.shape) == 1, "betas must be 1-D"
@@ -138,22 +139,22 @@ class GaussianDiffusion:
         self.num_timesteps = int(betas.shape[0])
 
         alphas = 1.0 - betas
-        self.alphas_cumprod = np.cumprod(alphas, axis=0)
-        self.alphas_cumprod_prev = np.append(1.0, self.alphas_cumprod[:-1])
-        self.alphas_cumprod_next = np.append(self.alphas_cumprod[1:], 0.0)
+        self.alphas_cumprod = np.cumprod(alphas, axis=0) # alpha_t_ba
+        self.alphas_cumprod_prev = np.append(1.0, self.alphas_cumprod[:-1]) #alpha_t-1_ba
+        self.alphas_cumprod_next = np.append(self.alphas_cumprod[1:], 0.0) #alpha_t+1_ba
         assert self.alphas_cumprod_prev.shape == (self.num_timesteps,)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
         self.sqrt_alphas_cumprod = np.sqrt(self.alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = np.sqrt(1.0 - self.alphas_cumprod)
-        self.log_one_minus_alphas_cumprod = np.log(1.0 - self.alphas_cumprod)
+        self.log_one_minus_alphas_cumprod = np.log(1.0 - self.alphas_cumprod) # 求loss用
         self.sqrt_recip_alphas_cumprod = np.sqrt(1.0 / self.alphas_cumprod)
         self.sqrt_recipm1_alphas_cumprod = np.sqrt(1.0 / self.alphas_cumprod - 1)
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         self.posterior_variance = (
             betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
-        )
+        ) #公式9
         # log calculation clipped because the posterior variance is 0 at the
         # beginning of the diffusion chain.
         self.posterior_log_variance_clipped = np.log(
@@ -167,10 +168,11 @@ class GaussianDiffusion:
             * np.sqrt(alphas)
             / (1.0 - self.alphas_cumprod)
         )
+        # 到这里所有固定的量都有了 看DDPM论文定义
 
     def q_mean_variance(self, x_start, t):
         """
-        Get the distribution q(x_t | x_0).
+        Get the distribution q(x_t | x_0). 公式8, q代表真实分布, 无参数
 
         :param x_start: the [N x C x ...] tensor of noiseless inputs.
         :param t: the number of diffusion steps (minus 1). Here, 0 means one step.
@@ -187,6 +189,7 @@ class GaussianDiffusion:
 
     def q_sample(self, x_start, t, noise=None):
         """
+        对公式8进行重参数采样的过程
         Diffuse the data for a given number of diffusion steps.
 
         In other words, sample from q(x_t | x_0).
@@ -208,6 +211,7 @@ class GaussianDiffusion:
     def q_posterior_mean_variance(self, x_start, x_t, t):
         """
         Compute the mean and variance of the diffusion posterior:
+        公式9和公式10, 返回后验的均值和方差, 需要给定xt, x0, 得到xt->xt-1的均值和方差
 
             q(x_{t-1} | x_t, x_0)
 
@@ -216,11 +220,11 @@ class GaussianDiffusion:
         posterior_mean = (
             _extract_into_tensor(self.posterior_mean_coef1, t, x_t.shape) * x_start
             + _extract_into_tensor(self.posterior_mean_coef2, t, x_t.shape) * x_t
-        )
-        posterior_variance = _extract_into_tensor(self.posterior_variance, t, x_t.shape)
+        ) # 后验的均值 公式10
+        posterior_variance = _extract_into_tensor(self.posterior_variance, t, x_t.shape) # 后验的方差，init里已经算过了，直接获取
         posterior_log_variance_clipped = _extract_into_tensor(
             self.posterior_log_variance_clipped, t, x_t.shape
-        )
+        ) #后验的对数方差，init里已经算过了，直接获取
         assert (
             posterior_mean.shape[0]
             == posterior_variance.shape[0]
@@ -233,6 +237,9 @@ class GaussianDiffusion:
         self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None
     ):
         """
+        得到逆扩散过程的均值和方差, 包括初始数据分布x_start的预测
+        神经网络预测的x[t]->x[t-1]的分布的均值和方差, p分布
+
         Apply the model to get p(x_{t-1} | x_t), as well as a prediction of
         the initial x, x_0.
 
@@ -259,13 +266,18 @@ class GaussianDiffusion:
         assert t.shape == (B,)
         model_output = model(x, self._scale_timesteps(t), **model_kwargs)
 
+        # 得到方差和对数方差
         if self.model_var_type in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]:
+            # 可学习的方差
             assert model_output.shape == (B, C * 2, *x.shape[2:])
             model_output, model_var_values = th.split(model_output, C, dim=1)
             if self.model_var_type == ModelVarType.LEARNED:
+                # 直接预测方差
                 model_log_variance = model_var_values
                 model_variance = th.exp(model_log_variance)
             else:
+                # 预测方差的插值系数
+                # 预测的范围是[-1,1]之间
                 min_log = _extract_into_tensor(
                     self.posterior_log_variance_clipped, t, x.shape
                 )
@@ -275,6 +287,7 @@ class GaussianDiffusion:
                 model_log_variance = frac * max_log + (1 - frac) * min_log
                 model_variance = th.exp(model_log_variance)
         else:
+            # 不可学习的方差
             model_variance, model_log_variance = {
                 # for fixedlarge, we set the initial (log-)variance like so
                 # to get a better decoder log likelihood.
@@ -291,33 +304,39 @@ class GaussianDiffusion:
             model_log_variance = _extract_into_tensor(model_log_variance, t, x.shape)
 
         def process_xstart(x):
+            # 对x进行一定的处理
             if denoised_fn is not None:
                 x = denoised_fn(x)
             if clip_denoised:
                 return x.clamp(-1, 1)
             return x
 
+        # 得到均值
         if self.model_mean_type == ModelMeanType.PREVIOUS_X:
+            # case1: 预测x[t-1]的期望值
             pred_xstart = process_xstart(
                 self._predict_xstart_from_xprev(x_t=x, t=t, xprev=model_output)
-            )
+            ) # 计算xstart就是x0
             model_mean = model_output
         elif self.model_mean_type in [ModelMeanType.START_X, ModelMeanType.EPSILON]:
             if self.model_mean_type == ModelMeanType.START_X:
+                # case2: 预测x[0]的期望值
                 pred_xstart = process_xstart(model_output)
             else:
+                # case3: 预测x[0]的期望值
                 pred_xstart = process_xstart(
                     self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output)
-                )
+                ) # 公式12
             model_mean, _, _ = self.q_posterior_mean_variance(
                 x_start=pred_xstart, x_t=x, t=t
-            )
+            ) # 公式11
         else:
             raise NotImplementedError(self.model_mean_type)
 
         assert (
             model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
         )
+        # 最后，我们的神经网络可以预测的x[t]->x[t-1]的分布的均值和方差, p分布
         return {
             "mean": model_mean,
             "variance": model_variance,
@@ -326,6 +345,7 @@ class GaussianDiffusion:
         }
 
     def _predict_xstart_from_eps(self, x_t, t, eps):
+        # 公式12 预测x0
         assert x_t.shape == eps.shape
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
@@ -333,6 +353,7 @@ class GaussianDiffusion:
         )
 
     def _predict_xstart_from_xprev(self, x_t, t, xprev):
+        # 公式10, 变换公式得到x0, 预测x0
         assert x_t.shape == xprev.shape
         return (  # (xprev - coef2*x_t) / coef1
             _extract_into_tensor(1.0 / self.posterior_mean_coef1, t, x_t.shape) * xprev
@@ -343,12 +364,14 @@ class GaussianDiffusion:
         )
 
     def _predict_eps_from_xstart(self, x_t, t, pred_xstart):
+        # 公式8
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
             - pred_xstart
         ) / _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
 
     def _scale_timesteps(self, t):
+        # 是否对时间进行预处理
         if self.rescale_timesteps:
             return t.float() * (1000.0 / self.num_timesteps)
         return t
@@ -357,6 +380,8 @@ class GaussianDiffusion:
         self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None
     ):
         """
+        基于x[t] 采样出x[t-1]
+
         Sample x_{t-1} from the model at the given timestep.
 
         :param model: the model to sample from.
@@ -378,11 +403,13 @@ class GaussianDiffusion:
             clip_denoised=clip_denoised,
             denoised_fn=denoised_fn,
             model_kwargs=model_kwargs,
-        )
+        ) # 可以根据model, xt, t 得到 x[t-1]的均值，方差，对数方差，x[0]的预测值
         noise = th.randn_like(x)
+        # 非0时刻的掩码矩阵
         nonzero_mask = (
             (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
         )  # no noise when t == 0
+        # 重参数化采样t-1时刻的sample，0.5是为了得到标准差
         sample = out["mean"] + nonzero_mask * th.exp(0.5 * out["log_variance"]) * noise
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 
@@ -454,6 +481,7 @@ class GaussianDiffusion:
             img = noise
         else:
             img = th.randn(*shape, device=device)
+        # 时间倒序
         indices = list(range(self.num_timesteps))[::-1]
 
         if progress:
@@ -643,6 +671,9 @@ class GaussianDiffusion:
         self, model, x_start, x_t, t, clip_denoised=True, model_kwargs=None
     ):
         """
+        vb: 变分下届
+        bpd: bit per dimension 
+        需要优化的KL散度  
         Get a term for the variational lower-bound.
 
         The resulting units are bits (rather than nats, as one might expect).
@@ -652,17 +683,22 @@ class GaussianDiffusion:
                  - 'output': a shape [N] tensor of NLLs or KLs.
                  - 'pred_xstart': the x_0 predictions.
         """
+        # 真实的x[0]，x[t]和t去计算x[t-1]的均值和方差
         true_mean, _, true_log_variance_clipped = self.q_posterior_mean_variance(
             x_start=x_start, x_t=x_t, t=t
         )
+        # x[t]，t和预测的x[0]去计算x[t-1]的均值和方差
         out = self.p_mean_variance(
             model, x_t, t, clip_denoised=clip_denoised, model_kwargs=model_kwargs
         )
+        # p_theta和q分布之间的KL散度
+        # L[t-1]的loss函数
         kl = normal_kl(
             true_mean, true_log_variance_clipped, out["mean"], out["log_variance"]
         )
         kl = mean_flat(kl) / np.log(2.0)
 
+        # L[0]的loss函数 x[1]->x[0]
         decoder_nll = -discretized_gaussian_log_likelihood(
             x_start, means=out["mean"], log_scales=0.5 * out["log_variance"]
         )
@@ -671,11 +707,18 @@ class GaussianDiffusion:
 
         # At the first timestep return the decoder NLL,
         # otherwise return KL(q(x_{t-1}|x_t,x_0) || p(x_{t-1}|x_t))
+        # t=0时刻 用离散高斯分布去计算似然
+        # t>0时刻 直接用KL散度
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
     def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
         """
+        三种case
+        只学习 vb loos
+        只学习 mse loss
+        同时学习 vb 和 mse loss
+
         Compute training losses for a single timestep.
 
         :param model: the model to evaluate loss on.
@@ -691,6 +734,7 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
+        # 前向扩散 采样xt 根据x0和t
         x_t = self.q_sample(x_start, t, noise=noise)
 
         terms = {}
@@ -751,6 +795,7 @@ class GaussianDiffusion:
 
     def _prior_bpd(self, x_start):
         """
+        先验的KL散度
         Get the prior KL term for the variational lower-bound, measured in
         bits-per-dim.
 

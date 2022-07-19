@@ -8,13 +8,13 @@ import torch.distributed as dist
 def create_named_schedule_sampler(name, diffusion):
     """
     Create a ScheduleSampler from a library of pre-defined samplers.
-
+    timestamp的采样方式
     :param name: the name of the sampler.
     :param diffusion: the diffusion object to sample for.
     """
-    if name == "uniform":
+    if name == "uniform": #均匀采样
         return UniformSampler(diffusion)
-    elif name == "loss-second-moment":
+    elif name == "loss-second-moment": #二阶动量平滑loss, 基于loss重要性采样
         return LossSecondMomentResampler(diffusion)
     else:
         raise NotImplementedError(f"unknown schedule sampler: {name}")

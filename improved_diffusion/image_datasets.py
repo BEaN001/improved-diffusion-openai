@@ -33,6 +33,7 @@ def load_data(
         # before an underscore.
         class_names = [bf.basename(path).split("_")[0] for path in all_files]
         sorted_classes = {x: i for i, x in enumerate(sorted(set(class_names)))}
+        # class id
         classes = [sorted_classes[x] for x in class_names]
     dataset = ImageDataset(
         image_size,
@@ -93,14 +94,15 @@ class ImageDataset(Dataset):
         pil_image = pil_image.resize(
             tuple(round(x * scale) for x in pil_image.size), resample=Image.BICUBIC
         )
-
+        # [H, W, C]
         arr = np.array(pil_image.convert("RGB"))
         crop_y = (arr.shape[0] - self.resolution) // 2
         crop_x = (arr.shape[1] - self.resolution) // 2
         arr = arr[crop_y : crop_y + self.resolution, crop_x : crop_x + self.resolution]
-        arr = arr.astype(np.float32) / 127.5 - 1
+        arr = arr.astype(np.float32) / 127.5 - 1 # 归一化[-1, 1]
 
         out_dict = {}
         if self.local_classes is not None:
             out_dict["y"] = np.array(self.local_classes[idx], dtype=np.int64)
+        # [C, H, W]
         return np.transpose(arr, [2, 0, 1]), out_dict

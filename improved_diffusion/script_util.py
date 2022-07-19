@@ -38,13 +38,13 @@ def model_and_diffusion_defaults():
 def create_model_and_diffusion(
     image_size,
     class_cond,
-    learn_sigma,
+    learn_sigma, # 要不要预测方差sigma
     sigma_small,
-    num_channels,
-    num_res_blocks,
-    num_heads,
-    num_heads_upsample,
-    attention_resolutions,
+    num_channels, # Unet
+    num_res_blocks, # Unet
+    num_heads, # Unet
+    num_heads_upsample, # Unet
+    attention_resolutions, # Unet 某些位置做MHSA-attention
     dropout,
     diffusion_steps,
     noise_schedule,
@@ -239,14 +239,15 @@ def create_gaussian_diffusion(
     rescale_learned_sigmas=False,
     timestep_respacing="",
 ):
-    betas = gd.get_named_beta_schedule(noise_schedule, steps)
+    """生成一个扩散模型的方案"""
+    betas = gd.get_named_beta_schedule(noise_schedule, steps) # 加噪方案 linear or cosine
     if use_kl:
         loss_type = gd.LossType.RESCALED_KL
     elif rescale_learned_sigmas:
         loss_type = gd.LossType.RESCALED_MSE
     else:
         loss_type = gd.LossType.MSE
-    if not timestep_respacing:
+    if not timestep_respacing: # 改进 timestep
         timestep_respacing = [steps]
     return SpacedDiffusion(
         use_timesteps=space_timesteps(steps, timestep_respacing),
