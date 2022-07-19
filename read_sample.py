@@ -25,12 +25,18 @@ from PIL import Image
 #     Image.fromarray(data).save(f'sample_{i}.png')
 #     i += 1
 
-datas = np.load('/tmp/openai-2022-07-18-14-25-23-820326/samples_16x256x256x3.npz')
-print(datas.files)
-# print(datas['a'])
-# print(datas['b'])
-i = 200
-for data in datas['arr_0']:
-    print(data.shape)
-    Image.fromarray(data).save(f'sample_{i}.png')
-    i += 1
+# datas = np.load('/tmp/openai-2022-07-18-14-25-23-820326/samples_16x256x256x3.npz')
+# print(datas.files)
+# # print(datas['a'])
+# # print(datas['b'])
+# i = 200
+# for data in datas['arr_0']:
+#     print(data.shape)
+#     Image.fromarray(data).save(f'sample_{i}.png')
+#     i += 1
+
+import torchvision
+import torch
+a=np.load("/tmp/openai-2022-07-18-14-25-23-820326/samples_16x256x256x3.npz")
+imgs=torch.from_numpy(a['arr_0']).permute(0,3,1,2)
+torchvision.utils.save_image(imgs/255., "sample_20k.jpg")

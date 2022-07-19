@@ -1,0 +1,1 @@
+env CUDA_VISIBLE_DEVICES=3 MODEL_FLAGS="--image_size 64 --num_channels 128 --num_res_blocks 3" DIFFUSION_FLAGS="--diffusion_steps 4000 --noise_schedule linear" python scripts/image_sample.py --model_path /tmp/openai-2022-05-19-22-24-49-903572/ema_0.9999_040000.pt
