@@ -12,7 +12,6 @@ import torch as th
 def normal_kl(mean1, logvar1, mean2, logvar2):
     """
     Compute the KL divergence between two gaussians.
-
     Shapes are automatically broadcasted, so batches can be compared to
     scalars, among other use cases.
     """
@@ -25,6 +24,7 @@ def normal_kl(mean1, logvar1, mean2, logvar2):
 
     # Force variances to be Tensors. Broadcasting helps convert scalars to
     # Tensors, but it does not work for th.exp().
+    # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
     logvar1, logvar2 = [
         x if isinstance(x, th.Tensor) else th.tensor(x).to(tensor)
         for x in (logvar1, logvar2)
